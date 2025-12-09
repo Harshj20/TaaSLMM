@@ -1,0 +1,47 @@
+"""Docker Compose configuration for TaaS server."""
+
+version: '3.8'
+
+services:
+  # Redis for Celery task queue
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # PostgreSQL database (optional, for production)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   environment:
+  #     POSTGRES_DB: taas
+  #     POSTGRES_USER: taas
+  #     POSTGRES_PASSWORD: taas_password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+  # TaaS gRPC Server
+  taas-server:
+    build: .
+    ports:
+      - "50051:50051"
+    environment:
+      - DATABASE_URL=sqlite:///data/taas.db  # Change to postgres:// for production
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./data:/data
+      - ./artifacts:/artifacts
+      - ./logs:/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: uv run taas-server
+
+# volumes:
+#   postgres_data:

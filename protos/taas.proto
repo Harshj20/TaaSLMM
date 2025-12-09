@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+package taas;
+
+// Task Service - Main task execution interface
+service TaskService {
+  // Submit a single task for execution
+  rpc SubmitTask(TaskRequest) returns (TaskResponse);
+  
+  // Execute a pipeline of tasks
+  rpc ExecutePipeline(PipelineRequest) returns (PipelineResponse);
+  
+  // Get task status
+  rpc GetTaskStatus(TaskStatusRequest) returns (TaskStatus);
+  
+  // List all available tasks with their schemas
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  
+  // Get detailed information about a specific task type
+  rpc GetTaskInfo(TaskInfoRequest) returns (TaskDefinition);
+  
+  // Cancel a running task
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+}
+
+// Artifact Service - Handle artifact upload/download
+service ArtifactService {
+  // Upload an artifact (streaming)
+  rpc UploadArtifact(stream ArtifactChunk) returns (ArtifactMetadata);
+  
+  // Download an artifact (streaming)
+  rpc DownloadArtifact(DownloadArtifactRequest) returns (stream ArtifactChunk);
+  
+  // List artifacts
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  
+  // Delete an artifact
+  rpc DeleteArtifact(DeleteArtifactRequest) returns (DeleteArtifactResponse);
+  
+  // Get artifact metadata
+  rpc GetArtifactMetadata(GetArtifactMetadataRequest) returns (ArtifactMetadata);
+}
+
+// Status Service - Real-time status updates
+service StatusService {
+  // Get current status
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+  
+  // Stream real-time status updates
+  rpc StreamStatus(StatusRequest) returns (stream StatusUpdate);
+  
+  // Get task execution history
+  rpc GetTaskHistory(TaskHistoryRequest) returns (TaskHistoryResponse);
+}
+
+// Logging Service - Task log management
+service LoggingService {
+  // Get logs for a task (paginated)
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
+  
+  // Stream logs in real-time
+  rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
+  
+  // Download complete log file
+  rpc DownloadLogFile(DownloadLogFileRequest) returns (stream LogChunk);
+  
+  // Get log metadata
+  rpc GetLogMetadata(GetLogMetadataRequest) returns (LogMetadata);
+}
+
+// ===== Task Service Messages =====
+
+message TaskRequest {
+  string task_name = 1;
+  map<string, string> inputs = 2;  // JSON-serialized inputs
+  string user_id = 3;  // Optional user identifier
+  map<string, string> metadata = 4;  // Additional metadata
+}
+
+message TaskResponse {
+  string task_id = 1;
+  TaskStatusEnum status = 2;
+  string message = 3;
+}
+
+message PipelineRequest {
+  repeated TaskRequest tasks = 1;
+  string pipeline_name = 2;
+  string user_id = 3;
+}
+
+message PipelineResponse {
+  string pipeline_id = 1;
+  repeated string task_ids = 2;
+  TaskStatusEnum status = 3;
+  string message = 4;
+}
+
+message TaskStatusRequest {
+  string task_id = 1;
+}
+
+message TaskStatus {
+  string task_id = 1;
+  string task_name = 2;
+  TaskStatusEnum status = 3;
+  map<string, string> inputs = 4;
+  map<string, string> outputs = 5;
+  string error_message = 6;
+  int64 created_at = 7;  // Unix timestamp
+  int64 updated_at = 8;  // Unix timestamp
+  int64 started_at = 9;  // Unix timestamp
+  int64 completed_at = 10;  // Unix timestamp
+  float progress = 11;  // 0.0 to 1.0
+}
+
+message ListTasksRequest {
+  // Empty or filter criteria can be added
+}
+
+message ListTasksResponse {
+  repeated TaskDefinition tasks = 1;
+}
+
+message TaskInfoRequest {
+  string task_name = 1;
+}
+
+message TaskDefinition {
+  string name = 1;
+  string description = 2;
+  string version = 3;
+  string input_schema = 4;  // JSON Schema
+  string output_schema = 5;  // JSON Schema
+  repeated string dependencies = 6;  // Task dependencies
+  map<string, string> metadata = 7;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+}
+
+message CancelTaskResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ===== Artifact Service Messages =====
+
+message ArtifactChunk {
+  string artifact_id = 1;
+  string name = 2;
+  bytes data = 3;
+  int64 offset = 4;
+  int64 total_size = 5;
+  map<string, string> metadata = 6;
+}
+
+message ArtifactMetadata {
+  string artifact_id = 1;
+  string name = 2;
+  int64 size = 3;
+  string content_type = 4;
+  string version = 5;
+  string task_id = 6;  // Associated task
+  int64 created_at = 7;
+  map<string, string> metadata = 8;
+}
+
+message DownloadArtifactRequest {
+  string artifact_id = 1;
+}
+
+message ListArtifactsRequest {
+  string task_id = 1;  // Optional filter by task
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+message ListArtifactsResponse {
+  repeated ArtifactMetadata artifacts = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message DeleteArtifactRequest {
+  string artifact_id = 1;
+}
+
+message DeleteArtifactResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetArtifactMetadataRequest {
+  string artifact_id = 1;
+}
+
+// ===== Status Service Messages =====
+
+message StatusRequest {
+  string task_id = 1;
+}
+
+message StatusResponse {
+  TaskStatus task_status = 1;
+  SystemStatus system_status = 2;
+}
+
+message StatusUpdate {
+  string task_id = 1;
+  TaskStatusEnum status = 2;
+  float progress = 3;
+  string message = 4;
+  int64 timestamp = 5;
+}
+
+message SystemStatus {
+  int32 active_tasks = 1;
+  int32 queued_tasks = 2;
+  int32 completed_tasks = 3;
+  int32 failed_tasks = 4;
+  map<string, string> worker_status = 5;
+}
+
+message TaskHistoryRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  int64 start_time = 4;  // Unix timestamp
+  int64 end_time = 5;    // Unix timestamp
+}
+
+message TaskHistoryResponse {
+  repeated TaskStatus tasks = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+// ===== Logging Service Messages =====
+
+message GetLogsRequest {
+  string task_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  string level = 4;  // Filter by log level (DEBUG, INFO, WARNING, ERROR)
+}
+
+message GetLogsResponse {
+  repeated LogEntry logs = 1;
+  int32 total_count = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message StreamLogsRequest {
+  string task_id = 1;
+  string level = 2;  // Filter by log level
+}
+
+message LogEntry {
+  string task_id = 1;
+  int64 timestamp = 2;
+  string level = 3;
+  string message = 4;
+  map<string, string> context = 5;
+}
+
+message DownloadLogFileRequest {
+  string task_id = 1;
+}
+
+message LogChunk {
+  bytes data = 1;
+  int64 offset = 2;
+  int64 total_size = 3;
+}
+
+message GetLogMetadataRequest {
+  string task_id = 1;
+}
+
+message LogMetadata {
+  string task_id = 1;
+  int64 size = 2;
+  int64 line_count = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+}
+
+// ===== Enums =====
+
+enum TaskStatusEnum {
+  UNKNOWN = 0;
+  PENDING = 1;
+  QUEUED = 2;
+  RUNNING = 3;
+  COMPLETED = 4;
+  FAILED = 5;
+  CANCELLED = 6;
+}
