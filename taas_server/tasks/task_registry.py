@@ -1,9 +1,9 @@
-"""Task registry for managing available tasks."""
+"""Enhanced task registry with automatic schema resolution."""
 
 import threading
 from typing import Dict, Type, List, Optional, Any
 
-from taas_server.tasks.base_task import BaseTask
+from taas_server.tasks.base_task import BaseTask, TaskType
 
 
 class TaskRegistry:
@@ -49,7 +49,7 @@ class TaskRegistry:
             if task_name in self._tasks:
                 raise ValueError(f"Task '{task_name}' is already registered")
             self._tasks[task_name] = task_class
-            print(f"Registered task: {task_name} (v{task_class.get_version()})")
+            print(f"Registered task: {task_name} (v{task_class.get_version()}, {task_class.get_task_type().value})")
     
     def get_task(self, task_name: str) -> Optional[Type[BaseTask]]:
         """
@@ -64,15 +64,23 @@ class TaskRegistry:
         with self._lock_tasks:
             return self._tasks.get(task_name)
     
-    def list_tasks(self) -> List[str]:
+    def list_tasks(self, task_type: Optional[TaskType] = None) -> List[str]:
         """
-        List all registered task names.
+        List registered task names, optionally filtered by type.
+        
+        Args:
+            task_type: Optional filter by task type
         
         Returns:
             List of task names
         """
         with self._lock_tasks:
-            return list(self._tasks.keys())
+            if task_type is None:
+                return list(self._tasks.keys())
+            return [
+                name for name, cls in self._tasks.items()
+                if cls.get_task_type() == task_type
+            ]
     
     def get_task_metadata(self, task_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -99,39 +107,139 @@ class TaskRegistry:
         with self._lock_tasks:
             return [task_class.get_metadata() for task_class in self._tasks.values()]
     
+    def get_combined_input_schema(self, task_name: str, as_pipeline: bool = True) -> Dict[str, Any]:
+        """
+        Get combined input schema for a task.
+        
+        If as_pipeline=True and task has dependencies:
+            Returns merged schema of dependency inputs (for mini-pipeline execution)
+            Example: finetune with deps [load_config, load_data] returns:
+                {config: dict, data_path: str}
+        
+        If as_pipeline=False or no dependencies:
+            Returns task's direct input schema
+            Example: finetune returns {config_id: str, dataset_id: str}
+        
+        Args:
+            task_name: Name of the task
+            as_pipeline: Whether to compute pipeline schema
+        
+        Returns:
+            Combined JSON schema
+        
+        Raises:
+            ValueError: If task not found or circular dependencies detected
+        """
+        task_class = self.get_task(task_name)
+        if task_class is None:
+            raise ValueError(f"Task '{task_name}' not found")
+        
+        # If not pipeline mode or no dependencies, return direct schema
+        dependencies = task_class.get_dependencies()
+        if not as_pipeline or not dependencies:
+            return task_class.get_input_schema()
+        
+        # Build combined schema from dependencies
+        combined_properties = {}
+        combined_required = []
+        visited = set()
+        
+        def collect_schemas(dep_name: str, depth: int = 0):
+            """Recursively collect schemas from dependencies."""
+            if depth > 10:  # Prevent infinite recursion
+                raise ValueError(f"Dependency chain too deep (possible cycle)")
+            
+            if dep_name in visited:
+                return  # Already processed
+            visited.add(dep_name)
+            
+            dep_class = self.get_task(dep_name)
+            if dep_class is None:
+                raise ValueError(f"Dependency task '{dep_name}' not found")
+            
+            # Process this task's dependencies first
+            for sub_dep in dep_class.get_dependencies():
+                collect_schemas(sub_dep, depth + 1)
+            
+            # Add this task's input schema
+            schema = dep_class.get_input_schema()
+            properties = schema.get("properties", {})
+            required = schema.get("required", [])
+            
+            for prop_name, prop_schema in properties.items():
+                # Skip if this property is an output from another dependency
+                # (it will be filled automatically by pipeline)
+                if not self._is_output_from_dependency(prop_name, dependencies):
+                    combined_properties[prop_name] = prop_schema
+                    if prop_name in required and prop_name not in combined_required:
+                        combined_required.append(prop_name)
+        
+        # Collect schemas from all dependencies
+        for dep in dependencies:
+            collect_schemas(dep)
+        
+        return {
+            "type": "object",
+            "properties": combined_properties,
+            "required": combined_required,
+        }
+    
+    def _is_output_from_dependency(self, param_name: str, dependencies: List[str]) -> bool:
+        """Check if a parameter is an output from any dependency task."""
+        for dep_name in dependencies:
+            dep_class = self.get_task(dep_name)
+            if dep_class is None:
+                continue
+            
+            output_mappings = dep_class.get_output_mappings()
+            if param_name in output_mappings.values():
+                return True
+        
+        return False
+    
     def get_pipeline_schema(self, task_names: List[str]) -> Dict[str, Any]:
         """
         Get combined input schema for a pipeline of tasks.
         
-        This aggregates all required inputs across all tasks in the pipeline.
+        This aggregates all required USER inputs across all tasks in the pipeline,
+        excluding intermediate values that are passed between tasks.
         
         Args:
             task_names: List of task names in the pipeline
         
         Returns:
-            Combined JSON schema
+            Combined JSON schema for user inputs
         
         Raises:
             ValueError: If any task is not found
         """
         combined_properties = {}
         combined_required = []
+        all_outputs = set()
         
+        # First pass: collect all outputs from all tasks
         for task_name in task_names:
             task_class = self.get_task(task_name)
             if task_class is None:
                 raise ValueError(f"Task '{task_name}' not found")
             
+            output_mappings = task_class.get_output_mappings()
+            all_outputs.update(output_mappings.values())
+        
+        # Second pass: collect inputs that are NOT outputs from other tasks
+        for task_name in task_names:
+            task_class = self.get_task(task_name)
             schema = task_class.get_input_schema()
             properties = schema.get("properties", {})
             required = schema.get("required", [])
             
-            # Merge properties (later tasks override earlier ones if conflicts)
             for prop_name, prop_schema in properties.items():
-                if prop_name not in combined_properties:
-                    combined_properties[prop_name] = prop_schema
-                    if prop_name in required:
-                        combined_required.append(prop_name)
+                # Only include if it's not an output from another task
+                if prop_name not in all_outputs:
+                    if prop_name not in combined_properties:
+                        combined_properties[prop_name] = prop_schema
+                        if prop_name in required:
+                            combined_required.append(prop_name)
         
         return {
             "type": "object",

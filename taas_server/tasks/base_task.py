@@ -1,9 +1,19 @@
-"""Base task interface for all TaaS tasks."""
+"""Enhanced base task with task type classification."""
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Dict, Any, Optional, List
 import uuid
 import asyncio
+
+
+class TaskType(str, Enum):
+    """Task type classification."""
+    
+    MICROSERVICE = "MICROSERVICE"  # Utility tasks (load_config, load_dataset, etc.)
+    MACROTASK = "MACROTASK"        # Main user tasks (finetune, train, evaluate)
+    PIPELINE = "PIPELINE"          # Composite tasks (chains of micro/macro tasks)
+    MANAGERIAL = "MANAGERIAL"      # Administrative tasks (list, submit, status)
 
 
 class BaseTask(ABC):
@@ -41,6 +51,21 @@ class BaseTask(ABC):
     
     @classmethod
     @abstractmethod
+    def get_task_type(cls) -> TaskType:
+        """Return the task type classification."""
+        pass
+    
+    @classmethod
+    def requires_isolation(cls) -> bool:
+        """
+        Whether this task requires isolated execution (containerized).
+        
+        By default, MacroTasks require isolation to prevent environment conflicts.
+        """
+        return cls.get_task_type() == TaskType.MACROTASK
+    
+    @classmethod
+    @abstractmethod
     def get_input_schema(cls) -> Dict[str, Any]:
         """
         Return JSON Schema for required inputs.
@@ -50,9 +75,9 @@ class BaseTask(ABC):
             "type": "object",
             "properties": {
                 "model_name": {"type": "string", "description": "Model to finetune"},
-                "dataset_path": {"type": "string", "description": "Path to dataset"}
+                "dataset_id": {"type": "string", "description": "Dataset ID from load_dataset"}
             },
-            "required": ["model_name", "dataset_path"]
+            "required": ["model_name", "dataset_id"]
         }
         """
         pass
@@ -63,21 +88,41 @@ class BaseTask(ABC):
         """
         Return JSON Schema for expected outputs.
         
-        Example:
+        Example for microservice:
         {
             "type": "object",
             "properties": {
-                "model_path": {"type": "string"},
-                "metrics": {"type": "object"}
-            }
+                "dataset_id": {"type": "string", "description": "Unique dataset identifier"},
+                "dataset_path": {"type": "string", "description": "Path to dataset"}
+            },
+            "required": ["dataset_id"]
         }
         """
         pass
     
     @classmethod
     def get_dependencies(cls) -> List[str]:
-        """Return list of task dependencies (task names that must run before this)."""
+        """
+        Return list of task dependencies (task names that must run before this).
+        
+        For pipeline tasks, this defines the execution order.
+        """
         return []
+    
+    @classmethod
+    def get_output_mappings(cls) -> Dict[str, str]:
+        """
+        Define which outputs can be used as inputs to downstream tasks.
+        
+        Example:
+        {
+            "dataset_id": "downstream_dataset_id_param",
+            "config_id": "downstream_config_id_param"
+        }
+        
+        This allows pipeline orchestration to automatically wire outputs to inputs.
+        """
+        return {}
     
     @classmethod
     def get_metadata(cls) -> Dict[str, Any]:
@@ -86,9 +131,12 @@ class BaseTask(ABC):
             "name": cls.get_name(),
             "description": cls.get_description(),
             "version": cls.get_version(),
+            "task_type": cls.get_task_type().value,
+            "requires_isolation": cls.requires_isolation(),
             "input_schema": cls.get_input_schema(),
             "output_schema": cls.get_output_schema(),
             "dependencies": cls.get_dependencies(),
+            "output_mappings": cls.get_output_mappings(),
         }
     
     def validate_inputs(self, inputs: Dict[str, Any]) -> tuple[bool, Optional[str]]:
@@ -132,7 +180,7 @@ class BaseTask(ABC):
             inputs: Validated input parameters
         
         Returns:
-            Dictionary of output values
+            Dictionary of output values (must match output_schema)
         
         Raises:
             Exception: If task execution fails

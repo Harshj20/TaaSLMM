@@ -4,7 +4,7 @@ from typing import Dict, Any
 import yaml
 import json
 
-from taas_server.tasks.base_task import BaseTask
+from taas_server.tasks.base_task import BaseTask, TaskType
 from taas_server.tasks.task_registry import register_task
 
 
@@ -23,6 +23,10 @@ class LoadConfigTask(BaseTask):
     @classmethod
     def get_version(cls) -> str:
         return "1.0.0"
+    
+    @classmethod
+    def get_task_type(cls) -> TaskType:
+        return TaskType.MICROSERVICE
     
     @classmethod
     def get_input_schema(cls) -> Dict[str, Any]:
@@ -49,13 +53,23 @@ class LoadConfigTask(BaseTask):
         return {
             "type": "object",
             "properties": {
-                "config": {"type": "object", "description": "Loaded configuration"}
+                "config": {"type": "object", "description": "Loaded configuration"},
+                "config_id": {"type": "string", "description": "Unique config identifier"}
             },
-            "required": ["config"]
+            "required": ["config", "config_id"]
+        }
+    
+    @classmethod
+    def get_output_mappings(cls) -> Dict[str, str]:
+        return {
+            "config_id": "config_id",
+            "config": "config"
         }
     
     async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Load the configuration."""
+        import uuid
+        
         config = None
         
         if "config_path" in inputs:
@@ -73,7 +87,9 @@ class LoadConfigTask(BaseTask):
         if config is None:
             raise ValueError("No configuration provided")
         
-        return {"config": config}
+        config_id = f"config_{uuid.uuid4().hex[:12]}"
+        
+        return {"config": config, "config_id": config_id}
 
 
 @register_task
@@ -91,6 +107,10 @@ class CreateConfigTask(BaseTask):
     @classmethod
     def get_version(cls) -> str:
         return "1.0.0"
+    
+    @classmethod
+    def get_task_type(cls) -> TaskType:
+        return TaskType.MICROSERVICE
     
     @classmethod
     def get_input_schema(cls) -> Dict[str, Any]:
