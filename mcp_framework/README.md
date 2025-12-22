@@ -2,69 +2,136 @@
 
 Production-grade ML task orchestration using **Model Context Protocol (MCP)** with HTTP-SSE transport.
 
-## Architecture
-
-```
-User → User Agent → Session Manager → Task Planning Agent (LLM)
-                                            ↓
-                                       MCP Gateway (HTTP-SSE)
-                                            ↓
-                      Tool Registry + Workflow Executor + Debug Manager
-                                            ↓
-                      Utility/Training/Admin Tools → Isolated Runtime (Docker)
-                                            ↓
-                      Artifact Store + Model Store + Debug Context DB
-```
-
-## Features
-
-- ✅ **MCP Protocol**: Standardized client-server communication via HTTP-SSE
-- ✅ **Session Continuity**: Persistent context across conversations
-- ✅ **Debug Intelligence**: Learns from failures and suggests fixes
-- ✅ **Isolated Execution**: Training tasks run in Docker containers
-- ✅ **Workflow DAGs**: Automatic dependency resolution and parallel execution
-
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
-# Install dependencies
+# Install
+cd mcp-framework
 uv sync
 
-# Start MCP server
+# Terminal 1: Start server
 uv run mcp-server
 
-# Use CLI agent
-uv run mcp-agent "Finetune Llama-2-7b on SQuAD dataset"
+# Terminal 2: Launch inspector
+uv run mcp-inspector
 ```
 
-## Components
+## ✨ Features
 
-### User Side
-- **User Agent**: CLI interface for task specification
-- **Session Manager**: Maintains conversation context
-- **Context Summarizer**: Compresses history for LLM
-- **Preference RAG**: Learns user preferences
+- ✅ **MCP Protocol** - Standardized HTTP-SSE communication
+- ✅ **Workflow DAGs** - Automatic dependency resolution & parallel execution
+- ✅ **Debug Intelligence** - Learns from errors, suggests fixes
+- ✅ **Session Continuity** - Persistent context across conversations
+- ✅ **Interactive Inspector** - Rich CLI for testing and debugging
 
-### Agent Layer
-- **Task Planning Agent**: LLM-powered workflow orchestration
+## 📋 Tools
 
-### Server Side (MCP)
-- **MCP Gateway**: HTTP-SSE endpoints
-- **Tool Registry**: Catalog of available tools
-- **Workflow Executor**: DAG execution engine
-- **Debug Manager**: Error learning system
+### Inspector (Interactive Debugger)
 
-### Tools
-- **Utility**: load_dataset, load_config, create_env
-- **Training**: finetune, train, quantize, evaluate (isolated)
-- **Admin**: list_tools, get_status, cancel_task
+```bash
+uv run mcp-inspector
+```
 
-## Documentation
+**Features**:
+- Inspect tools with category filters
+- Call tools interactively
+- Execute workflows with real-time SSE streaming
+- Query workflow status
+- Run automated test suite
 
-- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
-- [API Reference](docs/API.md)
-- [User Guide](docs/USER_GUIDE.md)
+### Client (Programmatic API)
 
-## License
+```python
+from mcp_framework.client import MCPClient
+
+async with MCPClient() as client:
+    # List tools
+    tools = await client.list_tools(category="UTILITY")
+    
+    # Call tool
+    result = await client.call_tool("load_dataset", {...})
+    
+    # Execute workflow with streaming
+    async for event in client.execute_workflow_streaming(dag):
+        print(event)
+```
+
+## 📚 Documentation
+
+- [Quick Start Guide](docs/QUICK_START.md) - Setup and basic usage
+- [Implementation Walkthrough](../brain/.../mcp_framework_walkthrough.md) - Architecture deep dive
+- [Implementation Plan](../brain/.../mcp_framework_plan.md) - Design decisions
+
+## 🎯 Examples
+
+```bash
+# Workflow DAG execution
+python examples/workflow_demo.py
+
+# Debug learning system
+python examples/debug_demo.py
+
+# Client usage
+python examples/client_demo.py
+```
+
+## 🏗️ Architecture
+
+```
+User → Session Manager → Task Planning Agent (LLM)
+             ↓
+         MCP Gateway (HTTP-SSE)
+             ↓
+   Tool Registry + Workflow Executor + Debug Manager
+             ↓
+   Utility/Training/Admin Tools
+             ↓
+   Database + Artifact Store
+```
+
+## 🔧 Configuration
+
+Create `.env`:
+```bash
+HOST=0.0.0.0
+PORT=8000
+DATABASE_URL=postgresql://localhost/mcp_framework
+LOG_LEVEL=INFO
+```
+
+## 🛠️ Development
+
+Add a new tool:
+
+```python
+from mcp_framework.tools.base import BaseTool, ToolCategory
+from mcp_framework.server.tool_registry import register_tool
+
+@register_tool
+class MyTool(BaseTool):
+    @classmethod
+    def get_name(cls) -> str:
+        return "my_tool"
+    
+    # Implement required methods...
+```
+
+## 📊 Status
+
+**Phase 1-2 Complete**:
+- ✅ MCP Gateway with HTTP-SSE
+- ✅ Tool Registry
+- ✅ Workflow Executor (DAG + streaming)
+- ✅ Debug Context Manager
+- ✅ Session Manager
+- ✅ Interactive Inspector
+- ✅ Client Library
+
+**Next**:
+- Phase 3: Docker isolation for training tools
+- Phase 4: Task Planning Agent (LLM)
+- Phase 5: User Agent CLI
+
+## 📝 License
 
 MIT

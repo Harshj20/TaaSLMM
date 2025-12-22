@@ -58,6 +58,7 @@ dev = [
 [project.scripts]
 mcp-server = "mcp_framework.server.mcp_gateway:main"
 mcp-agent = "mcp_framework.cli.main:main"
+mcp-inspector = "mcp_framework.client.mcp_inspector:main"
 
 [build-system]
 requires = ["hatchling"]
